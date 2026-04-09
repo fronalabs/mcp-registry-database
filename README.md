@@ -1,14 +1,14 @@
 # MCP Registry Database
 
 Prebuilt, GitHub-stars-enriched, quality-ranked snapshots of the [official MCP registry](https://registry.modelcontextprotocol.io),
-published hourly as xz-compressed JSON to this repo's [Releases](../../releases).
+published daily as xz-compressed JSON to this repo's [Releases](../../releases).
 
 ## Why
 
 The upstream registry has no popularity signals, and its built-in search only
 matches on `name`, not `description` or `title`. A paginated sync plus GitHub
 enrichment takes roughly 3 minutes of API calls per refresh. We run it once per
-hour so any consumer can `curl` a single file instead.
+day so any consumer can `curl` a single file instead.
 
 ## Scope
 
@@ -78,7 +78,7 @@ See [`schema/`](schema/) for the JSON Schema definitions.
 
 ## Release cadence
 
-- A GitHub Action runs hourly and creates a new release only when
+- A GitHub Action runs daily and creates a new release only when
   `content_sha256` changes, so no-op runs don't churn the releases list.
 - Releases older than 30 days are pruned nightly.
 - Release tags use the format `sync-YYYYMMDDTHHMMSSZ` in UTC.
