@@ -144,6 +144,10 @@ class RegistryServer(_Base):
 
     enrichment: Optional[Enrichment] = None
 
+    # Precomputed quality score (see scripts/ranking.py). Baked in at build time
+    # so every consumer gets identical ranking without re-deriving per query.
+    score: Optional[float] = None
+
     @classmethod
     def from_wire_row(cls, row: dict[str, Any]) -> "RegistryServer":
         """Construct from one upstream `{server, _meta}` row, flattening the

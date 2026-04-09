@@ -15,6 +15,7 @@ from .build_output import apply_filter, attach_enrichment, write_outputs
 from .enrich_github import enrich_all, extract_owner_repo
 from .fetch_registry import paginate, row_to_server
 from .models import Repository
+from .ranking import rank
 from .resolve_repo import resolve_repo_url
 
 
@@ -120,6 +121,9 @@ def main(argv: list[str] | None = None) -> int:
             enrichment = enrich_all(client, token, repos)
             log.info("enrichment returned %d entries", len(enrichment))
             attach_enrichment(servers, enrichment)
+
+        rank(servers)
+        log.info("ranked %d servers by quality score", len(servers))
 
         metadata = write_outputs(args.output_dir, servers)
         counts = metadata["counts"]
