@@ -1,0 +1,81 @@
+name: Sync MCP registry
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install dependencies
+        run: pip install -e .
+
+      - name: Run sync
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python -m scripts.sync --output-dir .
+
+      - name: Check for content change
+        id: diff
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          new_sha=$(jq -r .content_sha256 metadata.json)
+          echo "new_sha=$new_sha" >> "$GITHUB_OUTPUT"
+          previous_url="https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/metadata.json"
+          previous_sha=$(curl -sSL "$previous_url" 2>/dev/null | jq -r '.content_sha256 // ""' || true)
+          if [ "$previous_sha" = "$new_sha" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "content unchanged since previous release ($previous_sha); skipping release"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "content changed: $previous_sha → $new_sha"
+          fi
+
+      - name: Build release notes
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          jq -r '
+            "## Registry sync " + .generated_at + "\n\n" +
+            "- total servers: " + (.counts.total_servers | tostring) + "\n" +
+            "- active: " + (.counts.active | tostring) + "\n" +
+            "- deprecated: " + (.counts.deprecated | tostring) + "\n" +
+            "- stdio-installable: " + (.counts.with_stdio_packages | tostring) + "\n" +
+            "- remote-only: " + (.counts.with_remotes_only | tostring) + "\n" +
+            "- with GitHub repo: " + (.counts.with_github_repo | tostring) + "\n" +
+            "- enriched with GitHub: " + (.counts.enriched_with_github | tostring) + "\n\n" +
+            "content_sha256: `" + .content_sha256 + "`"
+          ' metadata.json > release-notes.md
+
+      - name: Compress payload
+        if: steps.diff.outputs.changed == 'true'
+        run: xz -9 --extreme --keep --force servers.json
+
+      - name: Create release
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="sync-$(date -u +%Y%m%dT%H%M%SZ)"
+          gh release create "$tag" \
+            --title "Registry sync $(date -u '+%Y-%m-%d %H:%M UTC')" \
+            --notes-file release-notes.md \
+            --latest \
+            servers.json.xz metadata.json

@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.env
+.pytest_cache/
+out/
+servers.json
+servers.json.gz
+servers.json.xz
+metadata.json
+release-notes.md
+*.egg-info/
+.DS_Store

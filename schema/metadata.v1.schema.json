@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/fronalabs/mcp-registry-database/main/schema/metadata.v1.schema.json",
+  "title": "MCP Registry Database Metadata",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "generated_at",
+    "source",
+    "counts",
+    "content_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "description": "SemVer of the schema used by the sibling servers.json.gz.",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source": {
+      "type": "object",
+      "required": ["registry_base_url", "registry_api_version"],
+      "properties": {
+        "registry_base_url": { "type": "string", "format": "uri" },
+        "registry_api_version": { "type": "string" }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "required": [
+        "total_servers",
+        "active",
+        "deprecated",
+        "with_github_repo",
+        "enriched_with_github",
+        "by_registry_type"
+      ],
+      "properties": {
+        "total_servers": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count after filtering to npm/pypi stdio packages only."
+        },
+        "active": { "type": "integer", "minimum": 0 },
+        "deprecated": { "type": "integer", "minimum": 0 },
+        "with_github_repo": { "type": "integer", "minimum": 0 },
+        "enriched_with_github": { "type": "integer", "minimum": 0 },
+        "by_registry_type": {
+          "type": "object",
+          "description": "Count of servers that have at least one package in each registry.",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "content_sha256": {
+      "type": "string",
+      "description": "SHA-256 of the uncompressed servers.json bytes, hex-encoded.",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}

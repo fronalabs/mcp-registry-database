@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/fronalabs/mcp-registry-database/main/schema/servers.v1.schema.json",
+  "title": "MCP Registry Database — Servers",
+  "type": "array",
+  "items": { "$ref": "#/$defs/RegistryServer" },
+
+  "$defs": {
+    "RegistryServer": {
+      "type": "object",
+      "required": ["name", "description", "version", "status", "is_latest"],
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "version": { "type": "string" },
+        "title": { "type": ["string", "null"] },
+        "repository": { "$ref": "#/$defs/Repository" },
+        "website_url": { "type": ["string", "null"], "format": "uri" },
+        "packages": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Package" }
+        },
+        "remotes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Transport" }
+        },
+        "status": {
+          "type": "string",
+          "enum": ["active", "deprecated", "deleted"]
+        },
+        "is_latest": { "type": "boolean" },
+        "status_message": { "type": ["string", "null"] },
+        "status_changed_at": { "type": ["string", "null"], "format": "date-time" },
+        "published_at": { "type": ["string", "null"], "format": "date-time" },
+        "updated_at": { "type": ["string", "null"], "format": "date-time" },
+        "enrichment": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/Enrichment" }
+          ]
+        }
+      }
+    },
+
+    "Repository": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "properties": {
+            "url": { "type": ["string", "null"] },
+            "source": { "type": ["string", "null"] },
+            "subfolder": { "type": ["string", "null"] }
+          }
+        }
+      ]
+    },
+
+    "Package": {
+      "type": "object",
+      "required": ["registry_type", "identifier", "transport"],
+      "properties": {
+        "registry_type": { "type": "string" },
+        "identifier": { "type": "string" },
+        "version": { "type": ["string", "null"] },
+        "runtime_hint": { "type": ["string", "null"] },
+        "transport": { "$ref": "#/$defs/Transport" },
+        "package_arguments": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Argument" }
+        },
+        "runtime_arguments": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Argument" }
+        },
+        "environment_variables": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/EnvVar" }
+        }
+      }
+    },
+
+    "Transport": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "type": "string" },
+        "url": { "type": ["string", "null"] }
+      }
+    },
+
+    "Argument": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "type": "string", "enum": ["positional", "named"] },
+        "name": { "type": ["string", "null"] },
+        "value_hint": { "type": ["string", "null"] },
+        "value": { "type": ["string", "null"] },
+        "default": { "type": ["string", "null"] },
+        "is_required": { "type": "boolean" },
+        "is_repeated": { "type": "boolean" }
+      }
+    },
+
+    "EnvVar": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": ["string", "null"] },
+        "is_required": { "type": "boolean" },
+        "is_secret": { "type": "boolean" },
+        "format": { "type": ["string", "null"] }
+      }
+    },
+
+    "Enrichment": {
+      "type": "object",
+      "required": ["enriched_at"],
+      "properties": {
+        "github_stars": { "type": ["integer", "null"], "minimum": 0 },
+        "github_forks": { "type": ["integer", "null"], "minimum": 0 },
+        "github_pushed_at": { "type": ["string", "null"], "format": "date-time" },
+        "github_archived": { "type": ["boolean", "null"] },
+        "enriched_at": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

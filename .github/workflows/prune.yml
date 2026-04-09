@@ -1,0 +1,31 @@
+name: Prune old releases
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete releases older than 30 days
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          cutoff=$(date -u -d '30 days ago' +%s)
+          gh release list --limit 500 --json tagName,publishedAt,isLatest | \
+            jq -r --argjson cutoff "$cutoff" '
+              .[] |
+              select(.isLatest == false) |
+              select((.publishedAt | fromdateiso8601) < $cutoff) |
+              .tagName
+            ' | while read -r tag; do
+              [ -z "$tag" ] && continue
+              echo "deleting $tag"
+              gh release delete "$tag" --yes --cleanup-tag
+            done
