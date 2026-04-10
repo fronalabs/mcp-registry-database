@@ -27,7 +27,7 @@ def _build_client() -> httpx.Client:
         backoff_factor=1.0,
         backoff_jitter=0.5,
         max_backoff_wait=30.0,
-        status_forcelist=[408, 429, 500, 502, 503, 504],
+        status_forcelist=[403, 408, 429, 500, 502, 503, 504],
         allowed_methods=["GET", "POST"],
         respect_retry_after_header=True,
     )
