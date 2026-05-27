@@ -5,6 +5,7 @@ from pathlib import Path
 from scripts.build_output import (
     apply_filter,
     attach_enrichment,
+    attach_inferred_env_vars,
     compute_counts,
     keep_server,
     write_outputs,
@@ -17,6 +18,7 @@ from scripts.models import (
     RegistryPackage,
     RegistryServer,
     RegistryTransport,
+    Repository,
 )
 
 FIXTURE = Path(__file__).parent.parent / "fixtures" / "registry-sample.json"
@@ -51,6 +53,62 @@ def test_attach_enrichment_matches_by_repo_url():
     assert hit.enrichment.github_stars == 2060
     others = [s for s in servers if "taylorwilsdon" not in s.name]
     assert all(s.enrichment is None for s in others)
+
+
+def test_attach_inferred_env_vars_only_fills_empty_packages():
+    s_empty = RegistryServer(
+        name="x/empty",
+        description="d",
+        version="1",
+        repository=Repository(url="https://github.com/foo/empty"),
+        packages=[_pkg("npm", "x"), _pkg("pypi", "x")],
+    )
+    s_full = RegistryServer(
+        name="x/full",
+        description="d",
+        version="1",
+        repository=Repository(url="https://github.com/foo/full"),
+        packages=[
+            RegistryPackage(
+                registry_type="npm",
+                identifier="x",
+                transport=RegistryTransport(kind="stdio"),
+                environment_variables=[RegistryEnvVar(name="UPSTREAM_VAR")],
+            )
+        ],
+    )
+    inferred = {
+        ("foo", "empty"): [("API_KEY", True), ("HOST", False)],
+        ("foo", "full"): [("SHOULD_NOT_APPEAR", True)],
+    }
+    attach_inferred_env_vars([s_empty, s_full], inferred)
+
+    # Empty server now has the inferred vars on every package, tagged.
+    for pkg in s_empty.packages:
+        names = [ev.name for ev in pkg.environment_variables]
+        assert names == ["API_KEY", "HOST"]
+        sources = {ev.source for ev in pkg.environment_variables}
+        assert sources == {"env-example"}
+        by_name = {ev.name: ev for ev in pkg.environment_variables}
+        assert by_name["API_KEY"].is_secret is True
+        assert by_name["HOST"].is_secret is False
+
+    # Server that already had upstream env vars is untouched.
+    assert [ev.name for ev in s_full.packages[0].environment_variables] == [
+        "UPSTREAM_VAR"
+    ]
+
+
+def test_attach_inferred_env_vars_skips_repos_without_matches():
+    s = RegistryServer(
+        name="x/y",
+        description="d",
+        version="1",
+        repository=Repository(url="https://github.com/foo/unmatched"),
+        packages=[_pkg("npm", "x")],
+    )
+    attach_inferred_env_vars([s], {("foo", "other"): [("X", False)]})
+    assert s.packages[0].environment_variables == []
 
 
 def test_apply_filter_drops_remote_only_server():
@@ -121,6 +179,10 @@ def test_compute_counts_reports_by_registry_type():
     assert counts["deprecated"] == 0
     assert counts["with_github_repo"] == 2
     assert counts["enriched_with_github"] == 0
+    # Fixture's taylorwilsdon server declares one upstream env var; the
+    # gmail-mcp one declares none.
+    assert counts["with_env_vars"] == 1
+    assert counts["with_inferred_env_vars"] == 0
     assert counts["by_registry_type"] == {"npm": 1, "pypi": 1}
 
 

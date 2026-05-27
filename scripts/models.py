@@ -76,6 +76,10 @@ class RegistryEnvVar(_Base):
     is_required: bool = Field(default=False, validation_alias="isRequired")
     is_secret: bool = Field(default=False, validation_alias="isSecret")
     format: Optional[str] = None
+    # Provenance: None = upstream registry; "env-example" = inferred from a
+    # .env.example-style file in the repo. Consumers can use this to render
+    # inferred vars differently (e.g. "best-effort" badge).
+    source: Optional[str] = None
 
 
 class RegistryPackage(_Base):

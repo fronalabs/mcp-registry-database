@@ -1,6 +1,12 @@
 from datetime import datetime, timezone
 
-from scripts.enrich_github import _node_to_enrichment, build_query, extract_owner_repo
+from scripts.enrich_github import (
+    ENV_EXAMPLE_CANDIDATES,
+    _node_to_enrichment,
+    build_env_example_query,
+    build_query,
+    extract_owner_repo,
+)
 
 
 def test_extract_owner_repo_plain():
@@ -94,6 +100,18 @@ def test_node_to_enrichment_parses_full_response():
     assert e.github_topics == ["mcp", "google-workspace"]
     assert e.github_owner_avatar_url.startswith("https://avatars.")
     assert e.enriched_at == now
+
+
+def test_build_env_example_query_covers_each_candidate_per_repo():
+    q = build_env_example_query([("a", "b"), ("c", "d")])
+    assert "r0: repository(" in q
+    assert "r1: repository(" in q
+    for path in ENV_EXAMPLE_CANDIDATES:
+        assert f'expression: "HEAD:{path}"' in q
+    # One object lookup per candidate, per repo (no shared aliases).
+    assert q.count("object(expression:") == 2 * len(ENV_EXAMPLE_CANDIDATES)
+    assert "isTruncated" in q
+    assert "byteSize" in q
 
 
 def test_node_to_enrichment_tolerates_missing_nested_fields():

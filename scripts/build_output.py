@@ -11,7 +11,7 @@ from typing import Any
 
 from .enrich_github import extract_owner_repo
 from .fetch_registry import API_VERSION, REGISTRY_BASE_URL
-from .models import Enrichment, RegistryServer, RegistryStatus
+from .models import Enrichment, RegistryEnvVar, RegistryServer, RegistryStatus
 
 SCHEMA_VERSION = "1.0.0"
 
@@ -54,11 +54,39 @@ def attach_enrichment(
             server.enrichment = enrichment[owner_repo]
 
 
+def attach_inferred_env_vars(
+    servers: list[RegistryServer],
+    inferred: dict[tuple[str, str], list[tuple[str, bool]]],
+) -> None:
+    """Populate `environment_variables` on each package of a server whose
+    registry entry didn't declare any, using the (name, is_secret) pairs we
+    parsed from a `.env.example` file. Entries are tagged with
+    `source="env-example"` so consumers can tell them apart from upstream data.
+    """
+    for server in servers:
+        if any(p.environment_variables for p in server.packages):
+            continue
+        repo_url = server.repository.url if server.repository else None
+        owner_repo = extract_owner_repo(repo_url)
+        if not owner_repo or owner_repo not in inferred:
+            continue
+        synthesized = [
+            RegistryEnvVar(name=name, is_secret=is_secret, source="env-example")
+            for name, is_secret in inferred[owner_repo]
+        ]
+        if not synthesized:
+            continue
+        for pkg in server.packages:
+            pkg.environment_variables = list(synthesized)
+
+
 def compute_counts(servers: list[RegistryServer]) -> dict[str, Any]:
     active = 0
     deprecated = 0
     with_repo = 0
     enriched = 0
+    with_env_vars = 0
+    with_inferred_env_vars = 0
     by_registry: dict[str, int] = {}
 
     for s in servers:
@@ -72,6 +100,17 @@ def compute_counts(servers: list[RegistryServer]) -> dict[str, Any]:
         if s.enrichment:
             enriched += 1
 
+        any_env = any(p.environment_variables for p in s.packages)
+        if any_env:
+            with_env_vars += 1
+        any_inferred = any(
+            ev.source == "env-example"
+            for p in s.packages
+            for ev in p.environment_variables
+        )
+        if any_inferred:
+            with_inferred_env_vars += 1
+
         seen = {p.registry_type for p in s.packages}
         for r in seen:
             by_registry[r] = by_registry.get(r, 0) + 1
@@ -82,6 +121,8 @@ def compute_counts(servers: list[RegistryServer]) -> dict[str, Any]:
         "deprecated": deprecated,
         "with_github_repo": with_repo,
         "enriched_with_github": enriched,
+        "with_env_vars": with_env_vars,
+        "with_inferred_env_vars": with_inferred_env_vars,
         "by_registry_type": by_registry,
     }
 

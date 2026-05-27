@@ -29,6 +29,21 @@ provenance or enrich with popularity signals.
 Transient upstream failures (408, 429, 5xx) are retried with exponential backoff
 and jitter via `httpx-retries`, honoring `Retry-After`.
 
+## Env var fallback
+
+About half of upstream entries declare no `environment_variables`, but many of
+those repos still ship a `.env.example` (or `.env.sample`, `.env.template`,
+`.env.dist`, `env.example`, `env.template`) at the root. For servers with no
+declared env vars, we fetch that file via the GitHub GraphQL API in the same
+batch as the popularity enrichment and synthesize `environment_variables`
+entries on each package, tagged with `source: "env-example"`. Each entry's
+`is_secret` is classified by name heuristic (keywords like `TOKEN`, `SECRET`,
+`API_KEY`, `PASSWORD`, dampened by config suffixes like `_REQUIRED`, `_URL`,
+`_TIMEOUT` — see [`scripts/env_example.py`](scripts/env_example.py)).
+
+Inferred entries are best-effort; consumers can filter on `source` to surface
+them with a different badge or skip them entirely.
+
 ## Ranking
 
 Every entry has a precomputed `score` field. The array in `servers.json.xz` is

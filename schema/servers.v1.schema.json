@@ -111,7 +111,12 @@
         "description": { "type": ["string", "null"] },
         "is_required": { "type": "boolean" },
         "is_secret": { "type": "boolean" },
-        "format": { "type": ["string", "null"] }
+        "format": { "type": ["string", "null"] },
+        "source": {
+          "description": "Provenance. Absent for upstream-registry entries; set to \"env-example\" for entries we inferred from a .env.example-style file in the repo when the registry declared none.",
+          "type": ["string", "null"],
+          "enum": [null, "env-example"]
+        }
       }
     },
 

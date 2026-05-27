@@ -143,3 +143,101 @@ def enrich_all(
         except httpx.HTTPError as e:
             logger.warning("batch failed (%s); skipping", e)
     return out
+
+
+# Candidate filenames for env-example files we'll look up at the repo root.
+# Ordered by observed frequency in the registry sample — the first hit wins.
+ENV_EXAMPLE_CANDIDATES: tuple[str, ...] = (
+    ".env.example",
+    ".env.sample",
+    ".env.template",
+    ".env.dist",
+    "env.example",
+    "env.template",
+)
+
+
+def build_env_example_query(repos: list[tuple[str, str]]) -> str:
+    """One GraphQL query that fetches each candidate env-example file at
+    `HEAD:<path>` for each repo. Missing files come back as null Blobs.
+    """
+    fragments = []
+    for i, (owner, repo) in enumerate(repos):
+        owner_esc = owner.replace('"', '\\"')
+        repo_esc = repo.replace('"', '\\"')
+        file_fields = " ".join(
+            f'f{j}: object(expression: "HEAD:{path}") {{ ... on Blob {{ '
+            f"byteSize isTruncated text }} }}"
+            for j, path in enumerate(ENV_EXAMPLE_CANDIDATES)
+        )
+        fragments.append(
+            f'r{i}: repository(owner: "{owner_esc}", name: "{repo_esc}") {{ '
+            f"{file_fields} }}"
+        )
+    return "query BatchEnvExampleLookup { " + " ".join(fragments) + " }"
+
+
+def fetch_env_examples_batch(
+    client: httpx.Client,
+    token: str,
+    repos: list[tuple[str, str]],
+) -> dict[tuple[str, str], tuple[str, str]]:
+    """Return `{(owner, repo): (filename, text)}` for repos that have an env
+    example. Repos with no match (or all matches truncated/empty) are omitted.
+    """
+    if not repos:
+        return {}
+    query = build_env_example_query(repos)
+    response = client.post(
+        GITHUB_GRAPHQL_URL,
+        json={"query": query},
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "mcp-registry-database",
+        },
+    )
+    response.raise_for_status()
+    payload = response.json()
+    data = payload.get("data") or {}
+
+    out: dict[tuple[str, str], tuple[str, str]] = {}
+    for i, key in enumerate(repos):
+        node = data.get(f"r{i}")
+        if not node:
+            continue
+        for j, path in enumerate(ENV_EXAMPLE_CANDIDATES):
+            blob = node.get(f"f{j}")
+            if not blob:
+                continue
+            text = blob.get("text")
+            # `isTruncated` means the file was too large for GraphQL to return
+            # in full; we skip it rather than parse half a file.
+            if not text or blob.get("isTruncated"):
+                continue
+            out[key] = (path, text)
+            break
+    return out
+
+
+def fetch_env_examples(
+    client: httpx.Client,
+    token: str,
+    repos: Iterable[tuple[str, str]],
+    batch_size: int = GRAPHQL_BATCH_SIZE,
+) -> dict[tuple[str, str], tuple[str, str]]:
+    unique = list(dict.fromkeys(repos))
+    out: dict[tuple[str, str], tuple[str, str]] = {}
+    for i in range(0, len(unique), batch_size):
+        chunk = unique[i : i + batch_size]
+        logger.info(
+            "fetching env-example batch %d..%d / %d",
+            i,
+            i + len(chunk),
+            len(unique),
+        )
+        try:
+            out.update(fetch_env_examples_batch(client, token, chunk))
+        except httpx.HTTPError as e:
+            logger.warning("env-example batch failed (%s); skipping", e)
+    return out
