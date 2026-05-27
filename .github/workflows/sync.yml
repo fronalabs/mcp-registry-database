@@ -54,13 +54,14 @@ jobs:
         run: |
           jq -r '
             "## Registry sync " + .generated_at + "\n\n" +
-            "- total servers: " + (.counts.total_servers | tostring) + "\n" +
-            "- active: " + (.counts.active | tostring) + "\n" +
-            "- deprecated: " + (.counts.deprecated | tostring) + "\n" +
-            "- stdio-installable: " + (.counts.with_stdio_packages | tostring) + "\n" +
-            "- remote-only: " + (.counts.with_remotes_only | tostring) + "\n" +
-            "- with GitHub repo: " + (.counts.with_github_repo | tostring) + "\n" +
-            "- enriched with GitHub: " + (.counts.enriched_with_github | tostring) + "\n\n" +
+            "- total servers: " + ((.counts.total_servers // 0) | tostring) + "\n" +
+            "- active: " + ((.counts.active // 0) | tostring) + "\n" +
+            "- deprecated: " + ((.counts.deprecated // 0) | tostring) + "\n" +
+            "- with GitHub repo: " + ((.counts.with_github_repo // 0) | tostring) + "\n" +
+            "- enriched with GitHub: " + ((.counts.enriched_with_github // 0) | tostring) + "\n" +
+            "- with env vars: " + ((.counts.with_env_vars // 0) | tostring) +
+              " (inferred from .env.example: " + ((.counts.with_inferred_env_vars // 0) | tostring) + ")\n" +
+            "- by registry: " + ((.counts.by_registry_type // {}) | to_entries | map(.key + "=" + (.value | tostring)) | join(", ")) + "\n\n" +
             "content_sha256: `" + .content_sha256 + "`"
           ' metadata.json > release-notes.md
 
