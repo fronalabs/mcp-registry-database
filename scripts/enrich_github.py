@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import time
+from json import JSONDecodeError
 import re
 from datetime import datetime, timezone
 from typing import Any, Iterable
@@ -65,6 +67,39 @@ def build_query(repos: list[tuple[str, str]]) -> str:
     return "query BatchRepoLookup { " + " ".join(fragments) + " }"
 
 
+def _fetch_graphql(client: httpx.Client, token: str, query: str) -> dict[str, Any]:
+    """Retry the request when a successful HTTP response contains invalid JSON.
+
+    HTTP failures are retried by the client's transport. Only JSON decoding
+    failures are retried here, so exhausted HTTP retries aren't repeated.
+    """
+    retries = 3
+    for attempt in range(retries + 1):
+        response = client.post(
+            GITHUB_GRAPHQL_URL,
+            json={"query": query},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+                "User-Agent": "mcp-registry-database",
+            },
+        )
+        response.raise_for_status()
+        try:
+            return response.json()
+        except JSONDecodeError:
+            if attempt == retries:
+                raise
+            delay = 2**attempt
+            logger.warning(
+                "GraphQL response contains invalid JSON; retrying in %ds (%d/%d)",
+                delay,
+                attempt + 1,
+                retries,
+            )
+            time.sleep(delay)
+
+
 def enrich_batch(
     client: httpx.Client,
     token: str,
@@ -73,17 +108,7 @@ def enrich_batch(
     if not repos:
         return {}
     query = build_query(repos)
-    response = client.post(
-        GITHUB_GRAPHQL_URL,
-        json={"query": query},
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/vnd.github+json",
-            "User-Agent": "mcp-registry-database",
-        },
-    )
-    response.raise_for_status()
-    payload = response.json()
+    payload = _fetch_graphql(client, token, query)
 
     data = payload.get("data") or {}
     now = datetime.now(timezone.utc)
@@ -140,7 +165,7 @@ def enrich_all(
         logger.info("enriching batch %d..%d / %d", i, i + len(chunk), len(unique))
         try:
             out.update(enrich_batch(client, token, chunk))
-        except httpx.HTTPError as e:
+        except (httpx.HTTPError, JSONDecodeError) as e:
             logger.warning("batch failed (%s); skipping", e)
     return out
 
@@ -188,17 +213,7 @@ def fetch_env_examples_batch(
     if not repos:
         return {}
     query = build_env_example_query(repos)
-    response = client.post(
-        GITHUB_GRAPHQL_URL,
-        json={"query": query},
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/vnd.github+json",
-            "User-Agent": "mcp-registry-database",
-        },
-    )
-    response.raise_for_status()
-    payload = response.json()
+    payload = _fetch_graphql(client, token, query)
     data = payload.get("data") or {}
 
     out: dict[tuple[str, str], tuple[str, str]] = {}
@@ -238,6 +253,6 @@ def fetch_env_examples(
         )
         try:
             out.update(fetch_env_examples_batch(client, token, chunk))
-        except httpx.HTTPError as e:
+        except (httpx.HTTPError, JSONDecodeError) as e:
             logger.warning("env-example batch failed (%s); skipping", e)
     return out

@@ -1,5 +1,9 @@
 from datetime import datetime, timezone
 
+import httpx
+import pytest
+
+from scripts import enrich_github
 from scripts.enrich_github import (
     ENV_EXAMPLE_CANDIDATES,
     _node_to_enrichment,
@@ -7,6 +11,49 @@ from scripts.enrich_github import (
     build_query,
     extract_owner_repo,
 )
+
+
+@pytest.mark.parametrize("fetch", [enrich_github.enrich_all, enrich_github.fetch_env_examples])
+def test_invalid_json_is_retried(fetch, monkeypatch):
+    sleeps = []
+    monkeypatch.setattr("time.sleep", sleeps.append)
+    responses = iter([
+        httpx.Response(200, content=b""),
+        httpx.Response(200, content=b"<html>temporarily unavailable</html>"),
+        httpx.Response(200, json={"data": {"r0": {
+            "stargazerCount": 42,
+            "f0": {"text": "API_KEY=", "isTruncated": False},
+        }}}),
+    ])
+    with httpx.Client(transport=httpx.MockTransport(lambda request: next(responses))) as client:
+        result = fetch(client, "test-token", [("owner", "repo")])
+    assert ("owner", "repo") in result
+    assert sleeps == [1, 2]
+
+
+@pytest.mark.parametrize("fetch", [enrich_github.enrich_all, enrich_github.fetch_env_examples])
+def test_invalid_json_exhaustion_preserves_other_batches(fetch, monkeypatch, caplog):
+    sleeps = []
+    monkeypatch.setattr("time.sleep", sleeps.append)
+    attempts = []
+
+    def handler(request):
+        attempts.append(request.content)
+        if b'broken' in request.content:
+            return httpx.Response(200, content=b"")
+        return httpx.Response(200, json={"data": {"r0": {
+            "stargazerCount": 42,
+            "f0": {"text": "API_KEY=", "isTruncated": False},
+        }}})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = fetch(client, "test-token", [
+            ("owner", "before"), ("owner", "broken"), ("owner", "after"),
+        ], batch_size=1)
+    assert set(result) == {("owner", "before"), ("owner", "after")}
+    assert len(attempts) == 6  # Two successful batches and four attempts at the bad one.
+    assert sleeps == [1, 2, 4]
+    assert "skipping" in caplog.text
 
 
 def test_extract_owner_repo_plain():
